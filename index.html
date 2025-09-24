@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPM FINANCIAL TERMINAL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import all necessary Firebase functions
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, orderBy, serverTimestamp, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Initialization ---
+        try {
+            // Use the config provided by the environment, with a fallback for local dev
+            const firebaseConfig = typeof __firebase_config !== 'undefined' 
+                ? JSON.parse(__firebase_config)
+                : {
+                    apiKey: "AIzaSyD95rNaFTGats503Nd5ceXX0hn6o74RfHo", // Fallback config
+                    authDomain: "terminal-monitoring-f975e.firebaseapp.com",
+                    projectId: "terminal-monitoring-f975e",
+                    storageBucket: "terminal-monitoring-f975e.firebasestorage.app",
+                    messagingSenderId: "291769493621",
+                    appId: "1:291769493621:web:5d795ab426cb0b8ca2f03c"
+                };
+
+            const app = initializeApp(firebaseConfig);
+            
+            // Expose the initialized instances and necessary functions to the global scope
+            window.firebaseServices = {
+                auth: getAuth(app),
+                db: getFirestore(app),
+                signInWithEmailAndPassword,
+                doc,
+                getDoc,
+                signOut,
+                setDoc,
+                updateDoc,
+                onAuthStateChanged
+            };
+
+            // Expose functions for the chat window
+            window.firebaseForChat = {
+                initializeApp,
+                getFirestore,
+                doc,
+                onSnapshot,
+                collection,
+                addDoc,
+                query,
+                orderBy,
+                serverTimestamp
+            };
+        } catch (e) {
+            console.error("Critical Firebase initialization failed:", e);
+        }
+    </script>
+
+    <style>
+        :root {
+            --bg-color: #020617;      /* Slate 950 - Deep Blue/Black */
+            --panel-bg: #0f172a;     /* Slate 900 - Dark Blue */
+            --text-color: #00A8FF;   /* Bright Blue - Accent */
+            --primary-text: #e2e8f0; /* Slate 200 - Whiteish */
+            --secondary-text: #94a3b8; /* Slate 400 - Gray */
+            --border-color: #334155; /* Slate 700 - Dark Gray/Blue */
+            --green: #22c55e;        /* Green 500 */
+            --red: #ef4444;          /* Red 500 */
+        }
+
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: var(--bg-color);
+            color: var(--primary-text);
+            height: 100vh;
+            overflow: hidden;
+            text-transform: uppercase;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg-color); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); }
+
+        .panel {
+            border: 1px solid var(--border-color);
+            background-color: var(--panel-bg);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+        }
+        
+        .panel-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 0.75rem;
+        }
+        
+        .panel-header {
+            font-weight: bold;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            color: var(--text-color);
+        }
+
+        .price-up { color: var(--green) !important; animation: flash-green 0.5s ease-out; }
+        .price-down { color: var(--red) !important; animation: flash-red 0.5s ease-out; }
+        @keyframes flash-green { 0%, 100% { background-color: transparent; } 50% { background-color: rgba(34, 197, 94, 0.1); } }
+        @keyframes flash-red { 0%, 100% { background-color: transparent; } 50% { background-color: rgba(239, 68, 68, 0.1); } }
+
+        .ticker-wrap { width: 100%; overflow: hidden; white-space: nowrap; }
+        .ticker-move { display: inline-block; animation: ticker 120s linear infinite; }
+        @keyframes ticker { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+        
+        .tab-button { padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--secondary-text); font-size: 11px; transition: all 0.2s ease-in-out; }
+        .tab-button.active { color: var(--text-color); border-bottom-color: var(--text-color); }
+        .tab-button:hover:not(.active) { color: var(--primary-text); background-color: #1e293b; } /* Slate 800 */
+        .tab-content { display: none; }
+        .tab-content.active { display: flex; flex-direction: column; flex-grow: 1; overflow: hidden;}
+        
+        #chat-launcher {
+            background-color: var(--text-color);
+            box-shadow: 0 4px 20px rgba(0, 168, 255, 0.4);
+        }
+        #chat-launcher:hover { transform: scale(1.1); }
+        #chat-launcher.active { background-color: var(--red); }
+        
+        #hologram-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+            padding: 1.5rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #hologram-container.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #hologram-modal {
+            width: 90%;
+            max-width: 450px;
+            height: 70vh;
+            background-color: rgba(15, 23, 42, 0.85);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0 30px rgba(0, 168, 255, 0.2);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform: scale(0.95) translateY(10px);
+        }
+        #hologram-container.active #hologram-modal {
+            transform: scale(1) translateY(0);
+        }
+
+        .user-message { text-align: right; margin-left: auto; background-color: rgba(40, 40, 40, 0.7); }
+        .ai-message { text-align: left; margin-right: auto; background-color: rgba(20, 20, 20, 0.7); }
+        #hologram-content .user-message, #hologram-content .ai-message {
+            max-width: 90%;
+            text-transform: none;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+        .tab-description {
+            font-size: 11px;
+            color: var(--secondary-text);
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            background-color: #0b1221; /* Slightly darker than panel bg */
+            text-transform: none;
+            flex-shrink: 0;
+        }
+        .feature-loader { border: 4px solid #334155; border-top: 4px solid #00A8FF; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- UI Upgrade Styles --- */
+        .news-card {
+            background-color: #1e293b; /* slate 800 */
+            border-left: 3px solid var(--text-color);
+            padding: 0.75rem;
+            border-radius: 4px;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .news-card:hover {
+            background-color: #334155; /* slate 700 */
+        }
+        .news-title {
+            color: var(--primary-text);
+            font-weight: 700;
+        }
+        .news-meta {
+            font-size: 10px;
+            color: var(--secondary-text);
+        }
+        .analysis-card {
+            background-color: #1e293b;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid #334155;
+        }
+        .analysis-card h3 {
+            color: var(--text-color);
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+        .analysis-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #33415520;
+        }
+        .analysis-item-label {
+            color: var(--secondary-text);
+        }
+        .analysis-item-value.bullish {
+            color: var(--green);
+            font-weight: 700;
+        }
+        .analysis-item-value.bearish {
+            color: var(--red);
+            font-weight: 700;
+        }
+
+    </style>
+</head>
+<body class="p-2">
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="flex items-center justify-center h-full">
+        <div class="w-full max-w-sm">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-white">TPM <span style="color: var(--text-color);">FINANCIAL TERMINAL</span></h1>
+                <p class="text-sm text-gray-400 mt-2">AUTENTIKASI DIBUTUHKAN</p>
+            </div>
+            <div class="panel p-8 shadow-lg shadow-blue-500/10">
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label for="username" class="block mb-2 text-xs font-bold text-gray-400">USER ID (EMAIL)</label>
+                        <input type="text" id="username" name="username" class="w-full p-2 bg-black border border-border-color rounded-md focus:outline-none focus:border-text-color text-white" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="password" class="block mb-2 text-xs font-bold text-gray-400">PASSWORD</label>
+                        <input type="password" id="password" name="password" class="w-full p-2 bg-black border border-border-color rounded-md focus:outline-none focus:border-text-color text-white" required>
+                    </div>
+                    <button type="submit" class="w-full bg-text-color text-white font-bold py-2 px-4 rounded-md hover:bg-white hover:text-black transition-colors duration-200">
+                        CONNECT
+                    </button>
+                </form>
+                <p id="error-message" class="text-red-500 text-center text-xs mt-4 normal-case"></p>
+            </div>
+            <p class="text-center text-xs text-gray-600 mt-6">
+                Hanya untuk pengguna terotorisasi.
+            </p>
+        </div>
+    </div>
+
+    <!-- Main Terminal Screen -->
+    <div id="terminal-screen" class="h-full flex flex-col gap-2 hidden">
+        <!-- Header -->
+        <header class="flex justify-between items-center px-1 flex-shrink-0 gap-4">
+            <div>
+                <h1 class="text-xl font-bold">TPM <span class="text-white">FINANCIAL TERMINAL</span></h1>
+                <div class="text-xs text-secondary-text normal-case flex items-center gap-2">
+                    <span>USER: <span id="user-display" style="color: var(--text-color);"></span></span>
+                    <span>| SISA WAKTU: <span id="time-left-display" class="font-bold" style="color: var(--text-color);">MEMUAT...</span></span>
+                </div>
+            </div>
+
+            <div class="flex-grow max-w-lg">
+                 <form id="search-form" class="relative">
+                    <input type="text" id="search-input" class="w-full bg-[#1e293b] border border-border-color rounded-md py-1.5 pl-10 pr-4 text-white placeholder-secondary-text focus:outline-none focus:border-text-color focus:ring-1 focus:ring-text-color" placeholder="Ketik perintah, contoh: /analisa xauusd, /pair tsla, /saham">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-secondary-text" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div id="ws-status-container" class="flex items-center gap-2">
+                    <div id="ws-status" class="w-3 h-3 rounded-full bg-yellow-500" title="Koneksi WebSocket"></div>
+                    <span class="text-xs text-secondary-text">WS</span>
+                </div>
+                <div id="clock" class="text-xl font-bold text-white">00:00:00</div>
+                <button id="logout-btn" class="text-xs bg-red-600 hover:bg-red-500 text-white font-bold py-1 px-3 rounded">LOGOUT</button>
+            </div>
+        </header>
+        
+        <!-- Main Content Grid -> Changed h-full to flex-grow and added overflow-hidden -->
+        <main class="grid grid-cols-12 gap-2 flex-grow overflow-hidden">
+            
+            <!-- Left Panel -->
+            <div id="left-panel" class="col-span-12 lg:col-span-5 panel">
+                <div id="tab-bar" class="flex border-b border-border-color flex-shrink-0 overflow-x-auto">
+                    <button id="tab-news" class="tab-button active">1 | NEWS</button>
+                    <button id="tab-technical" class="tab-button">2 | TEKNIKAL</button>
+                    <button id="tab-fundamental" class="tab-button">3 | FUNDAMENTAL</button>
+                    <button id="tab-chart" class="tab-button">4 | CHART</button>
+                    <button id="tab-utilities" class="tab-button">5 | UTILITAS</button>
+                    <button id="tab-movers" class="tab-button">6 | US MOVERS</button>
+                    <button id="tab-idx-movers" class="tab-button">7 | IDX MOVERS</button>
+                </div>
+                <!-- Content Area for Tabs -->
+                <div id="content-area" class="flex-grow relative overflow-hidden">
+                    <!-- News Tab -->
+                    <div id="content-news" class="tab-content active absolute inset-0">
+                        <p class="tab-description">Berita bisnis dan keuangan teratas dari seluruh dunia.</p>
+                        <div id="news-feed" class="space-y-3 flex-grow overflow-y-auto p-2"></div>
+                    </div>
+                    <!-- Technical Tab -->
+                    <div id="content-technical" class="tab-content absolute inset-0">
+                        <p class="tab-description">Analisis teknikal jangka pendek berdasarkan data tick terakhir yang diolah oleh AI.</p>
+                        <div class="flex justify-between items-center my-2 flex-shrink-0 px-3">
+                            <p id="analysis-status-technical" class="text-sm">Mengumpulkan data tick...</p>
+                            <div>
+                                <button id="reset-data-btn" class="bg-yellow-600 text-white text-xs px-2 py-1 rounded hover:bg-yellow-500 mr-2" disabled>RESET DATA</button>
+                                <button id="refresh-technical-btn" class="bg-gray-700 text-white text-xs px-2 py-1 rounded hover:bg-gray-600 disabled:opacity-50" disabled>ANALISIS ULANG</button>
+                            </div>
+                        </div>
+                        <div id="technical-analysis-content" class="text-sm normal-case flex-grow overflow-y-auto px-3"></div>
+                    </div>
+                    <!-- Fundamental Tab -->
+                    <div id="content-fundamental" class="tab-content absolute inset-0">
+                         <p class="tab-description">Analisis fundamental berdasarkan sentimen berita ekonomi terkini yang diolah oleh AI.</p>
+                        <div class="flex justify-between items-center my-2 flex-shrink-0 px-3">
+                            <p id="analysis-status-fundamental" class="text-sm">Siap untuk menganalisis berita.</p>
+                            <button id="refresh-fundamental-btn" class="bg-gray-700 text-white text-xs px-2 py-1 rounded hover:bg-gray-600">ANALISIS ULANG</button>
+                        </div>
+                        <div id="fundamental-analysis-content" class="text-sm normal-case flex-grow overflow-y-auto px-3"></div>
+                    </div>
+                    <!-- Chart Tab -> Corrected layout to use flexbox for proper height distribution -->
+                    <div id="content-chart" class="tab-content absolute inset-0 p-0">
+                        <div class="p-2 flex gap-2 items-center border-b border-border-color flex-shrink-0">
+                            <label for="chart-search-input" class="text-xs flex-shrink-0">GANTI ASET 1:</label>
+                            <form id="chart-search-form" class="flex-grow flex gap-2">
+                                <input type="text" id="chart-search-input" class="w-full text-xs p-1 bg-black border border-border-color rounded-md focus:outline-none focus:border-text-color text-white" placeholder="Cth: frxAUDUSD, R_50, 1HZ100V...">
+                                <button type="submit" class="bg-text-color text-white text-xs font-bold py-1 px-3 rounded">GANTI</button>
+                            </form>
+                        </div>
+                        <div class="grid grid-cols-2 grid-rows-2 gap-1 p-1 flex-grow">
+                            <div class="panel p-0 relative"><canvas id="realtime-chart-0"></canvas></div>
+                            <div class="panel p-0 relative"><canvas id="realtime-chart-1"></canvas></div>
+                            <div class="panel p-0 relative"><canvas id="realtime-chart-2"></canvas></div>
+                            <div class="panel p-0 relative"><canvas id="realtime-chart-3"></canvas></div>
+                        </div>
+                    </div>
+                    <!-- Utilities Tab -->
+                    <div id="content-utilities" class="tab-content absolute inset-0">
+                        <p class="tab-description">Jadwal rilis data ekonomi penting yang mempengaruhi pasar.</p>
+                        <div id="economic-calendar-wrapper" class="flex-grow overflow-y-auto px-3">
+                             <div id="economic-calendar-content" class="text-sm normal-case"></div>
+                        </div>
+                    </div>
+                    <!-- US Movers Tab -->
+                     <div id="content-movers" class="tab-content absolute inset-0 p-2">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 h-full">
+                            <div id="gainers-container" class="panel"></div>
+                            <div id="losers-container" class="panel"></div>
+                            <div id="actives-container" class="panel"></div>
+                        </div>
+                    </div>
+                    <!-- IDX Movers Tab -->
+                    <div id="content-idx-movers" class="tab-content absolute inset-0 p-2">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 h-full">
+                            <div id="idx-gainers-container" class="panel"></div>
+                            <div id="idx-losers-container" class="panel"></div>
+                            <div id="idx-actives-container" class="panel"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="col-span-12 lg:col-span-7 flex flex-col gap-2">
+                <!-- IHSG Chart Panel -->
+                <div class="flex-grow panel">
+                    <h2 class="panel-header">GRAFIK IHSG</h2>
+                    <div id="ihsg-chart-container" class="panel-content p-0"></div>
+                </div>
+                <!-- Quote Boxes -->
+                <div class="flex-shrink-0 grid grid-cols-3 gap-2" style="height: 120px;">
+                    <div class="col-span-1 panel"><h2 class="panel-header">FOREX</h2><div id="forex-container" class="panel-content"></div></div>
+                    <div class="col-span-1 panel"><h2 class="panel-header">COMMODITIES</h2><div id="commodities-container" class="panel-content"></div></div>
+                    <div class="col-span-1 panel"><h2 class="panel-header">CRYPTO</h2><div id="crypto-container" class="panel-content"></div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="panel p-1 ticker-wrap flex-shrink-0"><div id="footer-ticker-bar" class="ticker-move"></div></footer>
+        
+        <!-- Chat Launcher & Modal -->
+        <div id="chat-launcher" class="fixed bottom-4 right-4 w-16 h-16 rounded-full flex items-center justify-center cursor-pointer transition-transform duration-200 z-50">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-black" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.839 8.839 0 01-4.082-.978L2.05 17.65a.5.5 0 01-.638-.638l.978-3.912A8.839 8.839 0 012 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM4.416 14.584A7.836 7.836 0 002 10a6.999 6.999 0 017-7c3.866 0 7 2.686 7 6s-3.134 6-7 6a7.836 7.836 0 00-2.584-.416z" clip-rule="evenodd" /><path d="M6 8a.5.5 0 01.5-.5h7a.5.5 0 010 1h-7A.5.5 0 016 8zm0 2.5a.5.5 0 01.5-.5h4a.5.5 0 010 1h-4a.5.5 0 01-.5-.5z" /></svg>
+        </div>
+        <div id="hologram-container">
+            <div id="hologram-modal" class="panel">
+                <div class="panel-header flex justify-between items-center">
+                    <h2>TPM AI ASSISTANT</h2>
+                    <button id="close-hologram-btn" class="text-xl text-white hover:text-text-color">&times;</button>
+                </div>
+                <div id="hologram-content" class="panel-content"></div>
+                <div id="image-preview-container" class="p-2 border-t border-border-color hidden">
+                    <div class="relative inline-block">
+                        <img id="image-preview" class="h-20 w-auto rounded">
+                        <button id="cancel-image-btn" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full h-6 w-6 flex items-center justify-center text-xs">&times;</button>
+                    </div>
+                </div>
+                <div class="p-2 border-t border-border-color">
+                    <form id="hologram-form" class="flex gap-2 items-center">
+                        <button type="button" id="upload-image-btn" class="p-2 text-gray-400 hover:text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2_0 012-2h8a2 2_0 012 2v12a2 2_0 01-2 2H6a2 2_0 01-2-2V4zm12 1H4v10h12V5zM8.586 11.414a1 1_0 00-1.414 1.414L10 15.657l2.828-2.829a1 1_0 10-1.414-1.414L10 12.828l-1.414-1.414z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M10 18a8 8_0 100-16 8 8_0 000 16zM2 10a8 8_0 1116 0 8 8_0 01-16 0z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <input type="file" id="image-upload-input" class="hidden" accept="image/*">
+                        <input type="text" id="hologram-input" class="w-full p-1 text-white rounded-md focus:outline-none focus:border-text-color bg-black border border-border-color" placeholder="TANYA APAPUN...">
+                        <button type="submit" class="bg-text-color text-white font-bold p-2 rounded-md hover:bg-white hover:text-black">KIRIM</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION AND GLOBAL VARIABLES ---
+        const API_KEYS = { 
+            NEWS_API: "081d3e61fc874ed08df3931f568bf925", 
+            DERIV_APP_ID: '1089', 
+            GEMINI_API_KEY: "AIzaSyAh1ZCzoJvb_0D-tsgzYBiiLztdzag50AI",
+            FMP_API_KEY: "gTIe4yR97iiPI5z8jg56t6yfJiHvNKsq",
+            FRED_API_KEY: "3ea9739d9560cebf4001826201b77408"
+        };
+        const derivConfig = { forex: ['frxEURUSD', 'frxGBPUSD', 'frxUSDJPY', 'frxAUDUSD'], commodities: ['frxXAUUSD'], crypto: ['cryBTCUSD', 'cryETHUSD'] };
+        const assetsToAnalyze = { "EUR/USD": "frxEURUSD", "GBP/USD": "frxGBPUSD", "Emas (XAU/USD)": "frxXAUUSD", "BTC/USD": "cryBTCUSD", "ETH/USD": "cryETHUSD" };
+        const chartAssets = ['frxEURUSD', 'frxGBPUSD', 'cryBTCUSD', 'frxXAUUSD'];
+        const priceStates = {};
+        const marketDataHistory = {};
+        const MIN_TICKS_FOR_ANALYSIS = 500;
+        const MAX_TICKS_HISTORY = 1000;
+        const MAX_CHART_POINTS = 60;
+        let chatHistory = [];
+        const MAX_CHAT_HISTORY = 10;
+        let isTechnicalAnalysisRunning = false, isFundamentalAnalysisRunning = false, isCalendarRunning = false, dataReadyForAnalysis = false, isMoversRunning = false, isIdxMoversRunning = false;
+        let countdownInterval;
+        let calendarUpdateInterval;
+        let isTerminalInitialized = false;
+        let selectedImageBase64 = null;
+        let selectedImageType = null;
+        let newsCache = [];
+        let activeRealtimeCharts = {};
+        let areChartsInitialized = false;
+        let ws; 
+        
+        // --- DOM ELEMENTS ---
+        const loginScreen = document.getElementById('login-screen');
+        const terminalScreen = document.getElementById('terminal-screen');
+        const loginForm = document.getElementById('login-form');
+        const errorMessage = document.getElementById('error-message');
+        const clockElement = document.getElementById('clock');
+        const newsFeed = document.getElementById('news-feed');
+        const forexContainer = document.getElementById('forex-container');
+        const commoditiesContainer = document.getElementById('commodities-container');
+        const cryptoContainer = document.getElementById('crypto-container');
+        const footerTicker = document.getElementById('footer-ticker-bar');
+        const hologramContainer = document.getElementById('hologram-container');
+        const hologramContent = document.getElementById('hologram-content');
+        const closeHologramBtn = document.getElementById('close-hologram-btn');
+        const hologramForm = document.getElementById('hologram-form');
+        const hologramInput = document.getElementById('hologram-input');
+        const chatLauncher = document.getElementById('chat-launcher');
+        const tabBar = document.getElementById('tab-bar');
+        const contentArea = document.getElementById('content-area');
+        const technicalAnalysisContent = document.getElementById('technical-analysis-content');
+        const fundamentalAnalysisContent = document.getElementById('fundamental-analysis-content');
+        const economicCalendarContent = document.getElementById('economic-calendar-content');
+        const refreshTechnicalBtn = document.getElementById('refresh-technical-btn');
+        const refreshFundamentalBtn = document.getElementById('refresh-fundamental-btn');
+        const analysisStatusTechnical = document.getElementById('analysis-status-technical');
+        const userDisplay = document.getElementById('user-display');
+        const logoutBtn = document.getElementById('logout-btn');
+        const timeLeftDisplay = document.getElementById('time-left-display');
+        const uploadImageBtn = document.getElementById('upload-image-btn');
+        const imageUploadInput = document.getElementById('image-upload-input');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const imagePreview = document.getElementById('image-preview');
+        const cancelImageBtn = document.getElementById('cancel-image-btn');
+        const resetDataBtn = document.getElementById('reset-data-btn');
+        const searchForm = document.getElementById('search-form');
+        const searchInput = document.getElementById('search-input');
+        const wsStatus = document.getElementById('ws-status');
+
+        // --- FUNCTIONS ---
+        
+        const realtimePriceTitlePlugin = {
+            id: 'realtimePriceTitle',
+            afterDraw: (chart) => {
+                if (chart.options.plugins.title.text) {
+                    const ctx = chart.ctx;
+                    const title = chart.options.plugins.title.text;
+                    const price = chart.options.plugins.title.price || '';
+                    const priceColor = chart.options.plugins.title.priceColor || '#FFFFFF';
+                    ctx.save();
+                    ctx.font = 'bold 14px "Roboto Mono"';
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(title, 10, 10);
+                    if (price) {
+                        ctx.font = '500 14px "Roboto Mono"';
+                        ctx.fillStyle = priceColor;
+                        ctx.textAlign = 'right';
+                        ctx.fillText(price, chart.width - 10, 10);
+                    }
+                    ctx.restore();
+                }
+            }
+        };
+        Chart.register(realtimePriceTitlePlugin);
+
+        function startCountdownTimer(expiryDateString) {
+            if (!expiryDateString) {
+                timeLeftDisplay.textContent = "TIDAK DIATUR";
+                return;
+            }
+            const expiryDate = new Date(expiryDateString);
+            countdownInterval = setInterval(() => {
+                const now = new Date();
+                const distance = expiryDate - now;
+                if (distance < 0) {
+                    timeLeftDisplay.textContent = "KEDALUWARSA";
+                    timeLeftDisplay.classList.add('text-red-500');
+                    if (countdownInterval) clearInterval(countdownInterval);
+                    handleLogout();
+                    return;
+                }
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                if (days > 3650) {
+                    timeLeftDisplay.textContent = 'PERMANEN';
+                } else {
+                    timeLeftDisplay.textContent = `${days}H ${hours}J ${minutes}M ${seconds}D`;
+                }
+            }, 1000);
+        }
+        
+        function updateClock() { clockElement.textContent = new Date().toLocaleTimeString('en-GB'); }
+        
+        function renderTable(container, data) {
+            let table = container.querySelector('table');
+            if (!table) { table = document.createElement('table'); table.className = 'w-full text-xs'; container.appendChild(table); }
+            let tbody = table.querySelector('tbody');
+            if (!tbody) { tbody = document.createElement('tbody'); table.appendChild(tbody); }
+            tbody.innerHTML = data;
+        }
+        
+        function renderNewsItem(article, index) {
+            if (!article.title || article.title === '[Removed]') return '';
+            return `
+                <div id="news-item-${index}" class="news-card">
+                    <h3 class="news-title">${article.title}</h3>
+                    <p class="text-secondary-text text-xs normal-case mt-1">${article.description || ''}</p>
+                    <p class="news-meta mt-2">${article.source?.name} - ${new Date(article.publishedAt).toLocaleTimeString('en-GB')}</p>
+                </div>`;
+        }
+
+        async function robustFetch(url, asText = false) {
+            // Using a more reliable proxy like allorigins.win
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            try { 
+                const response = await fetch(proxyUrl); 
+                if (!response.ok) throw new Error(`Gagal memuat data dari proxy (status: ${response.status})`); 
+                return asText ? await response.text() : await response.json(); 
+            } catch (e) { 
+                console.error("Fetch Error:", e); 
+                throw new Error(`Gagal terhubung ke server atau proxy. Periksa koneksi atau coba lagi.`); 
+            }
+        }
+        
+        async function fetchNews() {
+            try {
+                const userApiKey = API_KEYS.NEWS_API;
+                if (!userApiKey) throw new Error("Kunci API NewsAPI tidak dikonfigurasi.");
+                const newsData = await robustFetch(`https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=50&apiKey=${userApiKey}`);
+                if (newsData.status === 'error') throw new Error(newsData.message || 'Kunci API tidak valid.');
+                if (newsData?.articles) {
+                    newsCache = newsData.articles;
+                    newsFeed.innerHTML = newsCache.map(renderNewsItem).join('');
+                } else {
+                    throw new Error("Respons API kosong atau tidak valid.");
+                }
+            } catch (error) {
+                newsFeed.innerHTML = `<p class="text-red-500 normal-case p-4">${error.message}</p>`;
+            }
+        }
+        
+        async function fetchEconomicCalendar() {
+            if (isCalendarRunning) return;
+            isCalendarRunning = true;
+            if (calendarUpdateInterval) clearInterval(calendarUpdateInterval);
+
+            economicCalendarContent.innerHTML = '<p class="text-text-color">Memuat data kalender...</p>';
+            try {
+                const htmlString = await robustFetch('https://www.investing.com/economic-calendar/', true);
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlString, 'text/html');
+                const rows = doc.querySelectorAll('#economicCalendarData tr.js-event-item');
+                if (rows.length === 0) throw new Error("Tidak dapat menemukan data kalender.");
+
+                let tableHtml = `<table class="w-full text-xs normal-case"><thead><tr class="border-b border-border-color"><th class="py-1 text-left">WAKTU</th><th class="py-1 text-left">MATA UANG</th><th class="py-1 text-center">IMP.</th><th class="py-1 text-left">PERISTIWA</th><th class="py-1 text-right">SISA WAKTU</th></tr></thead><tbody>`;
+                const events = [];
+
+                rows.forEach((row, index) => {
+                    const timeCell = row.querySelector('.time')?.textContent.trim() || '';
+                    const currency = row.querySelector('.flagCur')?.textContent.trim() || '-';
+                    const importance = (row.querySelectorAll('.sentiment .grayFullBull') || []).length;
+                    const eventName = row.querySelector('.event a')?.textContent.trim() || row.querySelector('.event')?.textContent.trim() || '-';
+                    
+                    let eventDate = null;
+                    if (timeCell.match(/^\d{2}:\d{2}$/)) {
+                        const [hours, minutes] = timeCell.split(':');
+                        const now = new Date();
+                        eventDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+                    }
+                    
+                    events.push({ id: `event-timer-${index}`, date: eventDate });
+
+                    tableHtml += `<tr class="border-b border-border-color"><td class="py-1.5">${timeCell || 'N/A'}</td><td class="py-1.5">${currency}</td><td class="py-1.5 text-center text-yellow-500 font-bold">${'•'.repeat(importance)}</td><td class="py-1.5 text-primary-text">${eventName}</td><td class="py-1.5 text-right font-bold" id="event-timer-${index}"></td></tr>`;
+                });
+
+                tableHtml += '</tbody></table><p class="text-xs text-secondary-text mt-2 normal-case">Data disediakan oleh Investing.com</p>';
+                economicCalendarContent.innerHTML = tableHtml;
+
+                const updateTimers = () => {
+                    events.forEach(event => {
+                        const timerCell = document.getElementById(event.id);
+                        if (!timerCell) return;
+
+                        if (!event.date) {
+                            timerCell.textContent = '-';
+                            return;
+                        }
+
+                        const now = new Date();
+                        const distance = event.date - now;
+
+                        if (distance < 0) {
+                            timerCell.textContent = 'RILIS';
+                            timerCell.classList.add('text-green-500');
+                        } else {
+                            const hours = Math.floor(distance / (1000 * 60 * 60));
+                            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                            timerCell.textContent = `${hours}j ${minutes}m ${seconds}d`;
+                            timerCell.classList.remove('text-green-500');
+                        }
+                    });
+                };
+                
+                updateTimers();
+                calendarUpdateInterval = setInterval(updateTimers, 1000);
+
+            } catch (error) {
+                economicCalendarContent.innerHTML = `<p class="text-red-500 normal-case">${error.message}</p>`;
+            } finally {
+                isCalendarRunning = false;
+            }
+        }
+
+        function formatAnalysisToHtml(text) {
+            let formattedText = text
+                .replace(/## (.*?)\n/g, '<h3>$1</h3>')
+                .replace(/\*\*(.*?):\*\* (.*?)\n/g, (match, label, value) => {
+                    let valueClass = 'analysis-item-value';
+                    if (value.toLowerCase().includes('positif') || value.toLowerCase().includes('baik') || value.toLowerCase().includes('naik') || value.toLowerCase().includes('menguat')) {
+                        valueClass += ' bullish';
+                    }
+                    if (value.toLowerCase().includes('negatif') || value.toLowerCase().includes('buruk') || value.toLowerCase().includes('turun') || value.toLowerCase().includes('melemah')) {
+                        valueClass += ' bearish';
+                    }
+                    return `<div class="analysis-item"><span class="analysis-item-label">${label}</span><span class="${valueClass}">${value}</span></div>`;
+                })
+                .replace(/\n/g, '<br>');
+
+            const sections = formattedText.split('<h3>');
+            let html = `<p class="text-xs text-secondary-text mb-4">Analisis Dibuat: ${new Date().toLocaleString('id-ID')}</p>`;
+            sections.forEach((section, index) => {
+                if (section.trim() === '') return;
+                if (index > 0) {
+                    const parts = section.split('</h3>');
+                    html += `<div class="analysis-card"><h3>${parts[0]}</h3>${parts[1]}</div>`;
+                } else {
+                    html += `<div class="analysis-card">${section}</div>`;
+                }
+            });
+            return html;
+        }
+
+        async function generateTechnicalAnalysis() {
+            if (isTechnicalAnalysisRunning || !dataReadyForAnalysis) return;
+            isTechnicalAnalysisRunning = true;
+            refreshTechnicalBtn.disabled = true;
+            technicalAnalysisContent.innerHTML = '<p>AI SEDANG MENGANALISA...</p>';
+            let dataForPrompt = '';
+            for (const name in assetsToAnalyze) {
+                const symbol = assetsToAnalyze[name];
+                const tickData = (marketDataHistory[symbol] || []).slice(-MIN_TICKS_FOR_ANALYSIS);
+                dataForPrompt += `\n\nData Tick (${MIN_TICKS_FOR_ANALYSIS} data terakhir) untuk ${name} (${symbol}):\n[${tickData.join(', ')}]`;
+            }
+            const prompt = `Anda adalah analis teknikal ahli. Berdasarkan rangkaian data harga mentah (tick data) berikut, berikan analisis teknikal untuk setiap aset. Fokus pada pergerakan harga jangka pendek. PENTING: Mulai setiap analisis aset dengan heading Markdown seperti '## EUR/USD'.\n1. **Momentum Terkini:** Apakah harga sedang dalam tren naik atau turun dalam 50 tick terakhir?\n2. **Level Psikologis Terdekat:** Identifikasi level support dan resistance terdekat berdasarkan angka bulat atau level yang sering diuji.\n3. **Volatilitas:** Apakah pasar terlihat sangat fluktuatif atau tenang berdasarkan rentang harga dalam 200 tick terakhir?\n4. **Saran Jangka Pendek:** Berdasarkan momentum, berikan satu saran spekulatif (misal: "Potensi Scalping BUY jika harga bertahan di atas [level]") dengan target dan risiko minimal (bukan nasihat keuangan).\n\n${dataForPrompt}`;
+            try {
+                const apiKey = API_KEYS.GEMINI_API_KEY;
+                if (!apiKey) throw new Error("GEMINI_API_KEY belum diatur.");
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    throw new Error(`Gemini API Error: ${response.statusText} (${response.status}) - ${errorBody}`);
+                }
+                const result = await response.json();
+                if (result.candidates?.[0]?.content.parts?.[0]) {
+                    technicalAnalysisContent.innerHTML = formatAnalysisToHtml(result.candidates[0].content.parts[0].text);
+                } else {
+                    throw new Error("Respons AI kosong atau format tidak sesuai.");
+                }
+            } catch (error) {
+                technicalAnalysisContent.innerHTML = `<p class="text-red-500">${error.message}</p>`;
+            } finally {
+                isTechnicalAnalysisRunning = false;
+                refreshTechnicalBtn.disabled = false;
+            }
+        }
+        
+        async function generateFundamentalAnalysis() {
+            if (isFundamentalAnalysisRunning) return;
+            isFundamentalAnalysisRunning = true;
+            refreshFundamentalBtn.disabled = true;
+            fundamentalAnalysisContent.innerHTML = '<p>Mengumpulkan berita utama...</p>';
+            try {
+                const userApiKey = API_KEYS.NEWS_API;
+                if (!userApiKey) throw new Error("Kunci API NewsAPI belum diatur.");
+                const newsData = await robustFetch(`https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=20&apiKey=${userApiKey}`);
+                if (newsData.status === 'error') throw new Error(newsData.message);
+                if (!newsData?.articles?.length) throw new Error("Tidak dapat mengambil berita.");
+                const newsToAnalyze = newsData.articles.filter(a => a.title && a.title !== '[Removed]').slice(0, 5);
+                const newsContext = newsToAnalyze.map(a => `Judul: ${a.title}\nRingkasan: ${a.description || 'N/A'}`).join('\n\n---\n\n');
+                const prompt = `Anda adalah analis fundamental. Berdasarkan berita berikut, berikan analisis:\n1. **Sentimen Pasar Umum:** Risk-on/risk-off?\n2. **Dampak ke Pasar Forex (USD):** Menguat/melemah?\n3. **Dampak ke Pasar Kripto (Bitcoin):** Positif/negatif?\nJelaskan singkat.\n\n[Berita]\n${newsContext}`;
+                fundamentalAnalysisContent.innerHTML = '<p>AI sedang menganalisis berita...</p>';
+                const apiKey = API_KEYS.GEMINI_API_KEY;
+                if (!apiKey) throw new Error("GEMINI_API_KEY belum diatur.");
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorBody}`);
+                }
+                const result = await response.json();
+                if (result.candidates?.[0]?.content.parts?.[0]) {
+                    let html = formatAnalysisToHtml(result.candidates[0].content.parts[0].text);
+                    html += `<div class="analysis-card mt-4"><h3 class="text-text-color">Sumber Berita</h3><ul class="list-none p-0 normal-case">`;
+                    newsToAnalyze.forEach(article => {
+                       html += `<li class="border-t border-gray-800 py-2"><a href="${article.url}" target="_blank" rel="noopener noreferrer" class="text-primary-text hover:text-text-color">${article.title} <span class="text-secondary-text">- ${article.source.name}</span></a></li>`;
+                    });
+                    html += `</ul></div>`;
+                    fundamentalAnalysisContent.innerHTML = html;
+                } else {
+                    throw new Error("Respons AI kosong atau format tidak sesuai.");
+                }
+            } catch (error) {
+                fundamentalAnalysisContent.innerHTML = `<p class="text-red-500">${error.message}</p>`;
+            } finally {
+                isFundamentalAnalysisRunning = false;
+                refreshFundamentalBtn.disabled = false;
+            }
+        }
+        
+        function addMessageToHologram(sender, message, imageUrl = null) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `p-2 rounded-lg mb-2 text-sm max-w-full ${sender === 'user' ? 'user-message' : 'ai-message'}`;
+            messageElement.style.textTransform = 'none';
+            let contentHTML = `<strong class="block mb-1">${sender === 'user' ? 'ANDA' : 'TPM AI'}</strong> ${message}`;
+            if (imageUrl) {
+                contentHTML += `<img src="${imageUrl}" class="mt-2 rounded-lg max-w-full h-auto">`;
+            }
+            messageElement.innerHTML = contentHTML;
+            hologramContent.appendChild(messageElement);
+            hologramContent.scrollTop = hologramContent.scrollHeight;
+        }
+
+        async function handleHologramSubmit(e) {
+            e.preventDefault();
+            const userInput = hologramInput.value.trim();
+            if (!userInput && !selectedImageBase64) return;
+            if (!API_KEYS.GEMINI_API_KEY) {
+                addMessageToHologram('ai', 'Maaf, fitur AI tidak aktif karena GEMINI_API_KEY belum diatur.');
+                return;
+            }
+            addMessageToHologram('user', userInput, selectedImageBase64);
+            hologramInput.value = '';
+            addMessageToHologram('ai', '...');
+            const userParts = [];
+            if(userInput) userParts.push({ text: userInput });
+            if(selectedImageBase64) userParts.push({ inlineData: { mimeType: selectedImageType, data: selectedImageBase64.split(',')[1] } });
+            cancelImageUpload();
+            chatHistory.push({ role: "user", parts: userParts });
+            try {
+                if(chatHistory.length > MAX_CHAT_HISTORY * 2) chatHistory = chatHistory.slice(-MAX_CHAT_HISTORY * 2);
+                const payload = { contents: chatHistory };
+                const apiKey = API_KEYS.GEMINI_API_KEY;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorBody}`);
+                }
+                const result = await response.json();
+                hologramContent.removeChild(hologramContent.lastChild); 
+                if (result.candidates?.[0]?.content.parts?.[0]) {
+                    const aiResponse = result.candidates[0].content.parts[0].text;
+                    addMessageToHologram('ai', aiResponse);
+                    chatHistory.push({ role: "model", parts: [{ text: aiResponse }] });
+                } else { addMessageToHologram('ai', 'Maaf, terjadi kesalahan saat memproses permintaan Anda.'); }
+            } catch (error) { 
+                hologramContent.removeChild(hologramContent.lastChild); 
+                addMessageToHologram('ai', `Error: ${error.message}`); 
+            }
+        }
+        
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                selectedImageBase64 = e.target.result;
+                selectedImageType = file.type;
+                imagePreview.src = selectedImageBase64;
+                imagePreviewContainer.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function cancelImageUpload() {
+            selectedImageBase64 = null;
+            selectedImageType = null;
+            imageUploadInput.value = '';
+            imagePreviewContainer.classList.add('hidden');
+        }
+
+        function checkDataReadiness() {
+            if (dataReadyForAnalysis) return;
+            const allAssetsReady = Object.values(assetsToAnalyze).every(symbol => marketDataHistory[symbol] && marketDataHistory[symbol].length >= MIN_TICKS_FOR_ANALYSIS);
+            if (allAssetsReady) {
+                dataReadyForAnalysis = true;
+                analysisStatusTechnical.textContent = 'Data siap untuk dianalisis.';
+                refreshTechnicalBtn.disabled = false;
+                resetDataBtn.disabled = false;
+            } else {
+                const firstAssetSymbol = Object.values(assetsToAnalyze)[0];
+                const currentTicks = marketDataHistory[firstAssetSymbol]?.length || 0;
+                analysisStatusTechnical.textContent = `Mengumpulkan data... (${currentTicks}/${MIN_TICKS_FOR_ANALYSIS})`;
+            }
+        }
+        
+        function handleResetData() {
+            for (const symbol in marketDataHistory) {
+                marketDataHistory[symbol] = [];
+            }
+            dataReadyForAnalysis = false;
+            technicalAnalysisContent.innerHTML = '';
+            analysisStatusTechnical.textContent = 'Mengumpulkan data tick...';
+            refreshTechnicalBtn.disabled = true;
+            resetDataBtn.disabled = true;
+        }
+
+        function connectDerivWebSocket() {
+            wsStatus.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
+            wsStatus.title = 'Menghubungkan ke WebSocket...';
+            
+            ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${API_KEYS.DERIV_APP_ID}`);
+            
+            ws.onopen = () => {
+                wsStatus.className = 'w-3 h-3 rounded-full bg-green-500';
+                wsStatus.title = 'WebSocket Terhubung';
+                const symbols = [...derivConfig.forex, ...derivConfig.commodities, ...derivConfig.crypto, ...chartAssets];
+                const uniqueSymbols = [...new Set(symbols)]; // Ensure no duplicates
+                uniqueSymbols.forEach(symbol => ws.send(JSON.stringify({ ticks: symbol, subscribe: 1 })));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.error) {
+                        console.error('Deriv API Error:', data.error);
+                        const failedSymbol = data.echo_req.ticks;
+                        if (failedSymbol && activeRealtimeCharts[failedSymbol]) {
+                            const chart = activeRealtimeCharts[failedSymbol];
+                            chart.options.plugins.title.price = 'SIMBOL TIDAK VALID';
+                            chart.options.plugins.title.priceColor = 'var(--red)';
+                            chart.update('none');
+                        }
+                        return;
+                    }
+                    if (data.msg_type === 'tick') {
+                        const { symbol, quote, epoch } = data.tick;
+                        
+                        if(Object.values(assetsToAnalyze).includes(symbol)) {
+                            if (!marketDataHistory[symbol]) marketDataHistory[symbol] = [];
+                            marketDataHistory[symbol].push(parseFloat(quote));
+                            if (marketDataHistory[symbol].length > MAX_TICKS_HISTORY) marketDataHistory[symbol].shift();
+                            checkDataReadiness();
+                        }
+
+                        const price = parseFloat(quote);
+                        const lastPrice = priceStates[symbol]?.price || 0;
+                        const movement = price > lastPrice ? 'up' : price < lastPrice ? 'down' : 'neutral';
+                        
+                        priceStates[symbol] = { price, movement };
+
+                        const row = document.getElementById(symbol);
+                        if (row) { 
+                            const priceCell = row.cells[1]; 
+                            priceCell.textContent = price.toFixed(symbol.includes('JPY') ? 3 : (symbol.includes('cry') || price > 100 ? 2 : 4));
+                            priceCell.classList.remove('price-up', 'price-down');
+                            void priceCell.offsetWidth;
+                            if (movement === 'up') priceCell.classList.add('price-up');
+                            else if (movement === 'down') priceCell.classList.add('price-down');
+                        }
+                        
+                        if (activeRealtimeCharts[symbol]) {
+                            updateRealtimeChart(symbol, price, epoch, movement === 'up' ? 'var(--green)' : 'var(--red)');
+                        }
+                        
+                        updateTickerItem(symbol);
+                    }
+                } catch (e) {
+                    console.error("Gagal memproses pesan WebSocket:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                wsStatus.className = 'w-3 h-3 rounded-full bg-yellow-500';
+                wsStatus.title = 'WebSocket Ditutup. Mencoba menyambungkan kembali...';
+                setTimeout(connectDerivWebSocket, 5000);
+            };
+
+            ws.onerror = (err) => {
+                wsStatus.className = 'w-3 h-3 rounded-full bg-red-500';
+                wsStatus.title = 'WebSocket Error. Periksa konsol.';
+                console.error('WS Error:', err);
+            };
+        }
+
+        function handleChartSearch(e) {
+            e.preventDefault();
+            const input = document.getElementById('chart-search-input');
+            const newSymbol = input.value.trim();
+            if (!newSymbol || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            const oldSymbol = chartAssets[0];
+            if (newSymbol.toLowerCase() === oldSymbol.toLowerCase()) return;
+
+            ws.send(JSON.stringify({ forget: oldSymbol }));
+            if (activeRealtimeCharts[oldSymbol]) {
+                activeRealtimeCharts[oldSymbol].destroy();
+                delete activeRealtimeCharts[oldSymbol];
+            }
+            if (priceStates[oldSymbol]) delete priceStates[oldSymbol];
+
+            chartAssets[0] = newSymbol;
+            const newChart = createRealtimeChart('realtime-chart-0', newSymbol);
+            activeRealtimeCharts[newSymbol] = newChart;
+            newChart.options.plugins.title.price = 'MEMUAT...';
+            newChart.update('none');
+            ws.send(JSON.stringify({ ticks: newSymbol, subscribe: 1 }));
+            input.value = '';
+        }
+        
+        function createRealtimeChart(canvasId, assetSymbol) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            const ctx = canvas.getContext('2d');
+            let displayName = assetSymbol;
+            try {
+                displayName = assetSymbol.replace(/frx|cry/i, '');
+                if (assetSymbol.match(/^(R_|1HZ)/i)) displayName = assetSymbol;
+            } catch(e) {}
+            
+            const gradient = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height * 0.8);
+            gradient.addColorStop(0, 'rgba(0, 168, 255, 0.4)');
+            gradient.addColorStop(1, 'rgba(0, 168, 255, 0)');
+
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array(MAX_CHART_POINTS).fill(''),
+                    datasets: [{
+                        data: Array(MAX_CHART_POINTS).fill(null),
+                        borderColor: 'var(--text-color)',
+                        backgroundColor: gradient,
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        tension: 0.4,
+                        fill: true,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    plugins: { legend: { display: false }, title: { display: true, text: displayName, price: '', priceColor: '#FFFFFF' } },
+                    scales: {
+                        x: { display: false },
+                        y: { display: true, position: 'right', grid: { color: 'rgba(255, 255, 255, 0.1)', drawBorder: false }, ticks: { color: 'var(--secondary-text)', maxTicksLimit: 5, font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        function setupRealtimeCharts() {
+            if (areChartsInitialized) return;
+            chartAssets.forEach((symbol, index) => {
+                const canvasId = `realtime-chart-${index}`;
+                if (activeRealtimeCharts[symbol]) activeRealtimeCharts[symbol].destroy();
+                const chart = createRealtimeChart(canvasId, symbol);
+                if(chart) activeRealtimeCharts[symbol] = chart;
+            });
+            areChartsInitialized = true;
+        }
+        
+        function updateRealtimeChart(symbol, price, epoch, priceColor) {
+            const chart = activeRealtimeCharts[symbol];
+            if (!chart) return;
+            const dataArray = chart.data.datasets[0].data;
+            dataArray.push(price);
+            if (dataArray.length > MAX_CHART_POINTS) dataArray.shift();
+            chart.options.plugins.title.price = price.toFixed(symbol.includes('JPY') ? 3 : (symbol.includes('cry') || price > 100 ? 2 : 4));
+            chart.options.plugins.title.priceColor = priceColor;
+            chart.update('none');
+        }
+        
+        function openChatWindow() {
+            const chatWindow = window.open("", "chatWindow", "width=1000,height=700,menubar=no,toolbar=no,location=no,status=no");
+            if (!chatWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            const htmlContent = `
+                <!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>TPM - Obrolan Terminal</title><script src="https://cdn.tailwindcss.com"><\/script><style>:root{--bg-color:#010409;--border-color:#30363d;--card-bg:#0d1117;--text-color:#c9d1d9;--text-secondary:#8b949e;--amber:#FFA500;--green:#238636;--red:#da3633}body{font-family:'Roboto Mono',monospace;background-color:var(--bg-color);color:var(--text-color);font-size:14px;overflow:hidden}.chat-container{display:grid;grid-template-columns:280px 1fr;height:100vh}.user-list-item.active{background-color:var(--amber);color:black}.message{max-width:80%}.message.own{background-color:#212b3c;margin-left:auto}.message.other{background-color:var(--card-bg)}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--card-bg)}::-webkit-scrollbar-thumb{background:var(--border-color);border-radius:3px}<\/style></head><body><div class="chat-container"><div class="flex flex-col bg-card-bg border-r border-border-color"><div class="p-4 border-b border-border-color"><h2 class="font-bold text-lg">ANGGOTA TERMINAL</h2></div><div id="user-list" class="flex-grow overflow-y-auto"><div id="group-chat-btn" class="p-3 border-b border-border-color cursor-pointer user-list-item active"><p class="font-bold"># CHAT GRUP</p><p class="text-xs text-gray-500">Obrolan umum</p></div></div></div><div class="flex flex-col"><div id="chat-header" class="p-4 border-b border-border-color font-bold text-lg text-amber-500"># CHAT GRUP</div><div id="message-list" class="flex-grow p-4 overflow-y-auto flex flex-col gap-3"></div><div class="p-4 border-t border-border-color"><form id="message-form" class="flex gap-3"><input id="message-input" type="text" class="w-full p-2 bg-black border border-border-color rounded-md focus:outline-none focus:border-text-color text-white normal-case" placeholder="Ketik pesan..." autocomplete="off"><button type="submit" class="bg-amber-600 hover:bg-amber-500 text-black font-bold py-2 px-4 rounded-md">KIRIM</button></form></div></div></div></body></html>`;
+            chatWindow.document.write(htmlContent);
+            const script = chatWindow.document.createElement('script');
+            script.type = 'module';
+            script.textContent = `const {initializeApp,getFirestore,doc,onSnapshot,collection,addDoc,query,orderBy,serverTimestamp}=window.opener.firebaseForChat;const appId=window.opener.appIdForChat,firebaseConfig=window.opener.firebaseConfigForChat,app=initializeApp(firebaseConfig),db=getFirestore(app),currentUserId=window.opener.currentUserId,currentUsername=window.opener.currentUsername;let activeChat={type:"group",id:"group_chat"},unsubscribeUsers,unsubscribeChat;const userList=chatWindow.document.getElementById("user-list"),messageList=chatWindow.document.getElementById("message-list"),messageForm=chatWindow.document.getElementById("message-form"),messageInput=chatWindow.document.getElementById("message-input"),chatHeader=chatWindow.document.getElementById("chat-header"),groupChatBtn=chatWindow.document.getElementById("group-chat-btn");function formatTimestamp(e){return e?new Date(1e3*e.seconds).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"}):""}function renderMessage(e){const t=e.senderId===currentUserId,s=t?"own":"other",a=\`
+                        <div class="message \${s} p-3 rounded-lg w-fit">
+                            <div class="flex items-baseline gap-2">
+                                <p class="font-bold text-amber-500">\${e.senderName}</p>
+                                <p class="text-xs text-gray-500">\${formatTimestamp(e.timestamp)}</p>
+                            </div>
+                            <p class="mt-1 normal-case">\${e.text}</p>
+                        </div>
+                    \`;messageList.innerHTML+=a,messageList.scrollTop=messageList.scrollHeight}function listenToMessages(){unsubscribeChat&&unsubscribeChat();let e;"group"===activeChat.type?e=query(collection(db,\`artifacts/\${appId}/public/data/group_chat\`),orderBy("timestamp","asc")):e=query(collection(db,\`artifacts/\${appId}/public/data/private_chats/\${activeChat.id}/messages\`),orderBy("timestamp","asc")),messageList.innerHTML="",unsubscribeChat=onSnapshot(e,e=>{e.docChanges().forEach(e=>{"added"===e.type&&renderMessage(e.doc.data())})})}async function sendMessage(e){if(!e.trim())return;const t={text:e,senderId:currentUserId,senderName:currentUsername,timestamp:serverTimestamp()};try{"group"===activeChat.type?await addDoc(collection(db,\`artifacts/\${appId}/public/data/group_chat\`),t):await addDoc(collection(db,\`artifacts/\${appId}/public/data/private_chats/\${activeChat.id}/messages\`),t),messageInput.value=""}catch(e){console.error("Error sending message: ",e),alert("Gagal mengirim pesan.")}}function createChatId(e,t){return[e,t].sort().join("_")}function switchChat(e,t,s){chatWindow.document.querySelectorAll(".user-list-item").forEach(e=>e.classList.remove("active")),"group"===e?(groupChatBtn.classList.add("active"),chatHeader.textContent="# CHAT GRUP",activeChat={type:"group",id:"group_chat"}):(chatWindow.document.getElementById(\`user-\${t}\`)?.classList.add("active"),chatHeader.textContent=\`OBROLAN PRIBADI DENGAN \${s}\`,activeChat={type:"private",id:createChatId(currentUserId,t)}),listenToMessages()}function listenToUsers(){const e=collection(db,\`artifacts/\${appId}/public/data/users\`);unsubscribeUsers=onSnapshot(e,e=>{const t=[];e.forEach(e=>{const s=e.data();e.id!==currentUserId&&t.push({id:e.id,...s})}),userList.querySelectorAll(".user-list-item:not(#group-chat-btn)").forEach(e=>e.remove()),t.sort((e,t)=>e.username.localeCompare(t.username)).forEach(e=>{const t=chatWindow.document.createElement("div");t.id=\`user-\${e.id}\`,t.className="p-3 border-b border-border-color cursor-pointer user-list-item",t.innerHTML=\`
+                                <div class="flex items-center gap-3">
+                                    <div class="w-3 h-3 rounded-full \${e.isOnline?"bg-green-500":"bg-gray-500"}"></div>
+                                    <p class="font-bold">\${e.username}</p>
+                                </div>
+                            \`,t.addEventListener("click",()=>switchChat("private",e.id,e.username)),userList.appendChild(t)})})}function initialize(){messageForm.addEventListener("submit",e=>{e.preventDefault(),sendMessage(messageInput.value)}),groupChatBtn.addEventListener("click",()=>switchChat("group","group_chat")),listenToUsers(),listenToMessages()}initialize();`;
+            chatWindow.document.head.appendChild(script);
+            chatWindow.document.close();
+        }
+
+        async function fetchMarketMovers() {
+            if (isMoversRunning) return;
+            isMoversRunning = true;
+            const gainersContainer = document.getElementById('gainers-container');
+            const losersContainer = document.getElementById('losers-container');
+            const activesContainer = document.getElementById('actives-container');
+            const loadingHtml = '<p class="text-center text-secondary-text p-4">MEMUAT DATA...</p>';
+            gainersContainer.innerHTML = loadingHtml;
+            losersContainer.innerHTML = loadingHtml;
+            activesContainer.innerHTML = loadingHtml;
+            try {
+                const apiKey = API_KEYS.FMP_API_KEY;
+                if (!apiKey) throw new Error("Kunci API FMP tidak valid.");
+                const [gainers, losers, actives] = await Promise.all([
+                    robustFetch(`https://financialmodelingprep.com/api/v3/stock_market/gainers?apikey=${apiKey}`),
+                    robustFetch(`https://financialmodelingprep.com/api/v3/stock_market/losers?apikey=${apiKey}`),
+                    robustFetch(`https://financialmodelingprep.com/api/v3/stock_market/actives?apikey=${apiKey}`)
+                ]);
+                renderMoversTable(gainersContainer, 'TOP GAINERS (US)', gainers);
+                renderMoversTable(losersContainer, 'TOP LOSERS (US)', losers);
+                renderMoversTable(activesContainer, 'PALING AKTIF (US)', actives);
+            } catch (error) {
+                const errorHtml = `<p class="text-red-500 p-2">${error.message}</p>`;
+                gainersContainer.innerHTML = errorHtml;
+                losersContainer.innerHTML = errorHtml;
+                activesContainer.innerHTML = errorHtml;
+            } finally {
+                isMoversRunning = false;
+            }
+        }
+
+        async function fetchIndonesianMovers() {
+            if (isIdxMoversRunning) return;
+            isIdxMoversRunning = true;
+            const idxGainersContainer = document.getElementById('idx-gainers-container');
+            const idxLosersContainer = document.getElementById('idx-losers-container');
+            const idxActivesContainer = document.getElementById('idx-actives-container');
+            const loadingHtml = '<p class="text-center text-secondary-text p-4">MEMUAT DATA...</p>';
+            idxGainersContainer.innerHTML = loadingHtml;
+            idxLosersContainer.innerHTML = loadingHtml;
+            idxActivesContainer.innerHTML = loadingHtml;
+            try {
+                const apiKey = API_KEYS.FMP_API_KEY;
+                if (!apiKey) throw new Error("Kunci API FMP tidak valid.");
+                const [gainers, losers, actives] = await Promise.all([
+                    robustFetch(`https://financialmodelingprep.com/api/v3/stock_market/gainers?exchange=JKSE&apikey=${apiKey}`),
+                    robustFetch(`https://financialmodelingprep.com/api/v3/stock_market/losers?exchange=JKSE&apikey=${apiKey}`),
+                    robustFetch(`https://financialmodelingprep.com/api/v3/stock_market/actives?exchange=JKSE&apikey=${apiKey}`)
+                ]);
+                renderMoversTable(idxGainersContainer, 'TOP GAINERS (IDX)', gainers);
+                renderMoversTable(idxLosersContainer, 'TOP LOSERS (IDX)', losers);
+                renderMoversTable(idxActivesContainer, 'PALING AKTIF (IDX)', actives);
+            } catch (error) {
+                const errorHtml = `<p class="text-red-500 p-2 normal-case">${error.message}</p>`;
+                idxGainersContainer.innerHTML = errorHtml;
+                idxLosersContainer.innerHTML = errorHtml;
+                idxActivesContainer.innerHTML = errorHtml;
+            } finally {
+                isIdxMoversRunning = false;
+            }
+        }
+
+        function renderMoversTable(container, title, data) {
+            let tableHtml = `<h3 class="panel-header">${title}</h3><div class="panel-content overflow-y-auto"><table class="w-full text-xs"><thead><tr class="border-b border-border-color"><th class="text-left p-1">SIMBOL</th><th class="text-right p-1">HARGA</th><th class="text-right p-1">PERUBAHAN</th><th class="text-right p-1">%</th></tr></thead><tbody>`;
+            if (data && data.length > 0) {
+                data.slice(0, 20).forEach(stock => {
+                    const changeClass = stock.changesPercentage > 0 ? 'text-green-500' : 'text-red-500';
+                    tableHtml += `<tr class="border-b border-border-color"><td class="p-1 font-bold">${stock.symbol.replace('.JK', '')}</td><td class="text-right p-1">${parseFloat(stock.price).toFixed(2)}</td><td class="text-right p-1 ${changeClass}">${parseFloat(stock.change).toFixed(2)}</td><td class="text-right p-1 font-bold ${changeClass}">${parseFloat(stock.changesPercentage).toFixed(2)}%</td></tr>`;
+                });
+            } else {
+                tableHtml += '<tr><td colspan="4" class="text-center p-4 text-secondary-text">Data tidak tersedia.</td></tr>';
+            }
+            tableHtml += '</tbody></table></div>';
+            container.innerHTML = tableHtml;
+        }
+
+        function setupFooterTicker() {
+            const allSymbols = [...derivConfig.forex, ...derivConfig.commodities, ...derivConfig.crypto];
+            let tickerHtml = '';
+            allSymbols.forEach(symbol => {
+                const name = symbol.replace(/frx|cry/, '');
+                tickerHtml += `<span id="ticker-${symbol}" class="inline-block mx-4"> ${name} -- </span>`;
+            });
+            footerTicker.innerHTML = `<div>${tickerHtml}</div>`.repeat(4);
+        }
+
+        function updateTickerItem(symbol) {
+            const tickerItem = document.querySelectorAll(`#ticker-${symbol}`);
+            if (!tickerItem.length) return;
+
+            const state = priceStates[symbol];
+            if (!state) return;
+
+            const name = symbol.replace(/frx|cry/, '');
+            let arrow = '';
+            let colorClass = '';
+
+            if (state.movement === 'up') {
+                arrow = '▲';
+                colorClass = 'text-green-500';
+            } else if (state.movement === 'down') {
+                arrow = '▼';
+                colorClass = 'text-red-500';
+            }
+
+            const html = `<span class="${colorClass}">${arrow} ${name} ${state.price.toFixed(4)}</span>`;
+            
+            tickerItem.forEach(item => item.innerHTML = html);
+        }
+
+        // --- DYNAMIC FEATURE WINDOW FUNCTIONS ---
+        
+        function openStockMarketWindow() {
+            const stockWindow = window.open("", "stockWindow", "width=1400,height=800,menubar=no,toolbar=no,location=no,status=no");
+            if (!stockWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            stockWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <title>Pasar Saham Indonesia</title>
+                    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Roboto Mono', monospace; margin:0; padding:0; }
+                        .tradingview-widget-container { height: 100%; width: 100%; }
+                    </style>
+                </head>
+                <body>
+                    <div style="display: grid; grid-template-columns: 60% 40%; height: 100vh; gap: 8px; padding: 8px; box-sizing: border-box;">
+                        
+                        <!-- Left Column: Main Chart (Changeable) -->
+                        <div class="tradingview-widget-container">
+                            <!-- TradingView Widget BEGIN -->
+                            <div id="chart-container" class="tradingview-widget-container__widget"></div>
+                            <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+                            {
+                                "autosize": true,
+                                "symbol": "IDX:COMPOSITE",
+                                "interval": "D",
+                                "timezone": "Asia/Jakarta",
+                                "theme": "dark",
+                                "style": "1",
+                                "locale": "id",
+                                "enable_publishing": false,
+                                "allow_symbol_change": true,
+                                "container_id": "chart-container"
+                            }
+                            <\/script>
+                            <!-- TradingView Widget END -->
+                        </div>
+
+                        <!-- Right Column: Stock Screener (All Indonesian Stocks) -->
+                        <div class="tradingview-widget-container">
+                             <!-- TradingView Widget BEGIN -->
+                            <div class="tradingview-widget-container__widget"></div>
+                            <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-screener.js" async>
+                            {
+                                "width": "100%",
+                                "height": "100%",
+                                "defaultColumn": "overview",
+                                "screener_type": "stock",
+                                "displayCurrency": "IDR",
+                                "colorTheme": "dark",
+                                "locale": "id",
+                                "market": "indonesia"
+                            }
+                            <\/script>
+                            <!-- TradingView Widget END -->
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            stockWindow.document.close();
+        }
+
+
+        function openEconomicMapWindow() {
+            const mapWindow = window.open("", "mapWindow", "width=1000,height=700,menubar=no,toolbar=no,location=no,status=no");
+            if (!mapWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            mapWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <title>Peta Ekonomi Dunia</title>
+                    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+                    <style>
+                        body { margin: 0; padding: 0; background-color: #020617; font-family: 'Roboto Mono', monospace; }
+                        #world-map { height: 100vh; width: 100%; }
+                        .leaflet-container { background: #0f172a; }
+                        .info-panel { padding: 8px 12px; font-size: 12px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(5px); border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; }
+                        .info-panel h4 { margin: 0 0 5px 0; color: #00A8FF; font-weight: 700; font-size: 14px; }
+                        .loader-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(2, 6, 23, 0.8); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+                        .feature-loader { border: 4px solid #334155; border-top: 4px solid #00A8FF; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+                        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    </style>
+                </head>
+                <body>
+                    <div id="world-map"></div>
+                    <div id="loader" class="loader-container"><div class="feature-loader"></div></div>
+                    <script>
+                        const map = L.map('world-map', { center: [20, 0], zoom: 2 });
+                        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(map);
+                        
+                        async function robustFetch(url) {
+                            const proxyUrl = \`https://api.allorigins.win/raw?url=\${encodeURIComponent(url)}\`;
+                            const response = await fetch(proxyUrl);
+                            if (!response.ok) throw new Error('Gagal memuat data');
+                            return await response.json();
+                        }
+
+                        let economicData = new Map();
+                        const fetchBorders = fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json').then(res => res.json());
+                        const fetchEcoData = robustFetch('https://api.worldbank.org/v2/country/all/indicator/NY.GDP.PCAP.PP.CD?format=json&per_page=20000&date=2022');
+
+                        Promise.all([fetchBorders, fetchEcoData]).then(([countryBorders, worldBankData]) => {
+                            if (worldBankData && worldBankData[1]) {
+                                worldBankData[1].forEach(item => {
+                                    if (item.countryiso3code && item.value) economicData.set(item.countryiso3code, { gdp_per_capita: item.value, country: item.country.value });
+                                });
+                            }
+                            const getColor = gdp => gdp > 100000 ? '#800026' : gdp > 50000 ? '#BD0026' : gdp > 20000 ? '#E31A1C' : gdp > 10000 ? '#FC4E2A' : gdp > 5000 ? '#FD8D3C' : gdp > 2000 ? '#FEB24C' : gdp > 1000 ? '#FED976' : '#FFEDA0';
+                            const style = feature => ({ fillColor: getColor(economicData.get(feature.id)?.gdp_per_capita), weight: 1, opacity: 1, color: '#4a5568', fillOpacity: 0.7 });
+                            
+                            const info = L.control();
+                            info.onAdd = function() { this._div = L.DomUtil.create('div', 'info-panel'); this.update(); return this._div; };
+                            info.update = function(feature) {
+                                let data = feature ? economicData.get(feature.id) : null;
+                                this._div.innerHTML = '<h4>PDB per Kapita (PPP)</h4>' + (feature ? \`<b>\${data?.country || feature.properties.name}</b><br/>\${data ? '$' + Math.round(data.gdp_per_capita).toLocaleString() : 'N/A'}\` : 'Arahkan ke negara');
+                            };
+                            info.addTo(map);
+
+                            let geojsonLayer = L.geoJson(countryBorders, { 
+                                style, 
+                                onEachFeature: (feature, layer) => {
+                                    layer.on({
+                                        mouseover: e => { const l = e.target; l.setStyle({ weight: 3, color: '#00A8FF', fillOpacity: 0.9 }); l.bringToFront(); info.update(l.feature); },
+                                        mouseout: e => { geojsonLayer.resetStyle(e.target); info.update(); },
+                                        click: e => map.fitBounds(e.target.getBounds())
+                                    });
+                                }
+                            }).addTo(map);
+                            document.getElementById('loader').style.display = 'none';
+                        }).catch(err => {
+                             document.getElementById('loader').innerHTML = '<p style=\\"color:red\\">' + err.message + '</p>';
+                        });
+                    <\/script>
+                </body>
+                </html>
+            `);
+            mapWindow.document.close();
+        }
+
+        function openYieldCurveWindow() {
+             const yieldWindow = window.open("", "yieldWindow", "width=800,height=600,menubar=no,toolbar=no,location=no,status=no");
+            if (!yieldWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            yieldWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <title>US Treasury Yield Curve</title>
+                    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <script src="https://cdn.tailwindcss.com"><\/script>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
+                    <style>
+                        body { background-color: #020617; color: #e2e8f0; font-family: 'Roboto Mono', monospace; text-transform: uppercase; }
+                        .panel { border: 1px solid #334155; background-color: #0f172a; border-radius: 8px; }
+                        .loader-container { display: flex; align-items: center; justify-content: center; height: 100vh; }
+                        .feature-loader { border: 4px solid #334155; border-top: 4px solid #00A8FF; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+                        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    </style>
+                </head>
+                <body class="p-4">
+                    <div id="content-yieldcurve">
+                        <div class="loader-container"><div class="feature-loader"></div></div>
+                    </div>
+                    <script>
+                        const API_KEY = "${API_KEYS.FRED_API_KEY}";
+                        async function robustFetch(url) {
+                            const proxyUrl = \`https://api.allorigins.win/raw?url=\${encodeURIComponent(url)}\`;
+                            const response = await fetch(proxyUrl);
+                            if (!response.ok) throw new Error('Gagal memuat data');
+                            return await response.json();
+                        }
+                        
+                        async function initialize() {
+                            const contentYield = document.getElementById('content-yieldcurve');
+                            try {
+                                const seriesIds = { '2Y': 'DGS2', '10Y': 'DGS10', '30Y': 'DGS30' };
+                                const fetchPromises = Object.values(seriesIds).map(id => robustFetch(\`https://api.stlouisfed.org/fred/series/observations?series_id=\${id}&api_key=\${API_KEY}&file_type=json&sort_order=desc&limit=1\`));
+                                const results = await Promise.all(fetchPromises);
+                                const latestYields = {};
+                                results.forEach((result, index) => {
+                                    if (result?.observations?.length > 0) {
+                                        const tenor = Object.keys(seriesIds)[index];
+                                        const value = parseFloat(result.observations[0].value);
+                                        latestYields[tenor] = isNaN(value) ? null : value;
+                                    } else { throw new Error(\`Gagal mengambil data untuk seri \${Object.keys(seriesIds)[index]}\`); }
+                                });
+                                const yield2Y = latestYields['2Y'], yield10Y = latestYields['10Y'], yield30Y = latestYields['30Y'];
+                                const lastUpdateDate = results[0]?.observations[0]?.date || 'N/A';
+                                const spread10Y2Y = (yield10Y !== null && yield2Y !== null) ? (yield10Y - yield2Y).toFixed(2) : 'N/A';
+                                contentYield.innerHTML = \`
+                                    <div class="flex flex-col h-full">
+                                        <div class="flex-shrink-0 mb-4"><h3 class="text-lg font-bold">US TREASURY YIELD CURVE</h3><p class="text-xs text-gray-400">Data terakhir: \${lastUpdateDate}</p></div>
+                                        <div class="grid grid-cols-3 gap-4 mb-4 text-center">
+                                            <div class="panel p-2"><p class="text-sm text-gray-400">2-YEAR</p><p class="text-2xl font-bold">\${yield2Y !== null ? yield2Y + '%' : 'N/A'}</p></div>
+                                            <div class="panel p-2"><p class="text-sm text-gray-400">10-YEAR</p><p class="text-2xl font-bold">\${yield10Y !== null ? yield10Y + '%' : 'N/A'}</p></div>
+                                            <div class="panel p-2"><p class="text-sm text-gray-400">30-YEAR</p><p class="text-2xl font-bold">\${yield30Y !== null ? yield30Y + '%' : 'N/A'}</p></div>
+                                        </div>
+                                        <div class="panel p-2 mb-4 text-center \${spread10Y2Y < 0 ? 'border-red-500' : ''}"><p class="text-sm text-gray-400">10Y-2Y SPREAD</p><p class="text-xl font-bold \${spread10Y2Y < 0 ? 'text-red-500' : 'text-green-500'}">\${spread10Y2Y} bps</p>\${spread10Y2Y < 0 ? '<p class="text-xs text-red-400 normal-case">Kurva Terbalik (Sinyal Resesi)</p>' : ''}</div>
+                                        <div class="flex-grow panel p-2 h-64"><canvas id="yield-curve-chart"></canvas></div>
+                                    </div>\`;
+                                const ctx = document.getElementById('yield-curve-chart').getContext('2d');
+                                new Chart(ctx, {
+                                    type: 'line',
+                                    data: { labels: ['2-Year', '10-Year', '30-Year'], datasets: [{ label: 'Yield (%)', data: [yield2Y, yield10Y, yield30Y], borderColor: '#00A8FF', backgroundColor: 'rgba(0, 168, 255, 0.2)', borderWidth: 2, pointBackgroundColor: '#e2e8f0', pointRadius: 5, tension: 0.1, fill: true }] },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false, ticks: { color: '#94a3b8', callback: value => value + '%' }, grid: { color: '#334155' } }, x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } } } }
+                                });
+                            } catch (error) { contentYield.innerHTML = \`<div class="h-full flex items-center justify-center"><p class="text-red-500 normal-case">\${error.message}</p></div>\`; }
+                        }
+                        initialize();
+                    <\/script>
+                </body>
+                </html>
+            `);
+            yieldWindow.document.close();
+        }
+
+        function openFearAndGreedWindow() {
+             const fearWindow = window.open("", "fearWindow", "width=800,height=700,menubar=no,toolbar=no,location=no,status=no");
+            if (!fearWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            fearWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <title>Crypto Fear & Greed Index</title>
+                    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <script src="https://cdn.tailwindcss.com"><\/script>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
+                     <style>
+                        body { background-color: #020617; color: #e2e8f0; font-family: 'Roboto Mono', monospace; text-transform: uppercase; }
+                        .panel { border: 1px solid #334155; background-color: #0f172a; border-radius: 8px; }
+                        .loader-container { display: flex; align-items: center; justify-content: center; height: 100vh; }
+                        .feature-loader { border: 4px solid #334155; border-top: 4px solid #00A8FF; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+                        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    </style>
+                </head>
+                <body class="p-4">
+                     <div id="content-fearindex">
+                        <div class="loader-container"><div class="feature-loader"></div></div>
+                    </div>
+                    <script>
+                        async function robustFetch(url) {
+                            const proxyUrl = \`https://api.allorigins.win/raw?url=\${encodeURIComponent(url)}\`;
+                            const response = await fetch(proxyUrl);
+                            if (!response.ok) throw new Error('Gagal memuat data');
+                            return await response.json();
+                        }
+                        const getFearGreedColor = value => {
+                            if (value <= 20) return '#ef4444'; if (value <= 45) return '#f97316';
+                            if (value <= 55) return '#eab308'; if (value <= 75) return '#84cc16';
+                            return '#22c55e';
+                        };
+
+                        async function initialize() {
+                            const contentFear = document.getElementById('content-fearindex');
+                            try {
+                                const response = await robustFetch('https://api.alternative.me/fng/?limit=31');
+                                if (!response || !response.data) throw new Error("Respons API tidak valid.");
+                                const currentData = response.data[0];
+                                const historicalData = response.data.slice(1).reverse();
+                                const currentValue = parseInt(currentData.value);
+                                contentFear.innerHTML = \`
+                                    <div class="flex flex-col h-full">
+                                        <div class="flex-shrink-0 mb-4"><h3 class="text-lg font-bold">CRYPTO FEAR & GREED INDEX</h3><p class="text-xs text-gray-400">Sumber: alternative.me</p></div>
+                                        <div class="w-full h-48 flex items-center justify-center mb-4 relative">
+                                            <canvas id="fear-greed-gauge"></canvas>
+                                            <div class="absolute text-center">
+                                                <div class="text-4xl font-bold">\${currentValue}</div>
+                                                <div class="text-lg font-bold" style="color: \${getFearGreedColor(currentValue)}">\${currentData.value_classification}</div>
+                                            </div>
+                                        </div>
+                                        <div class="flex-grow panel p-2 h-64"><h4 class="text-sm font-bold mb-2">RIWAYAT 30 HARI</h4><canvas id="fear-greed-history"></canvas></div>
+                                    </div>\`;
+                                new Chart(document.getElementById('fear-greed-gauge').getContext('2d'), {
+                                    type: 'doughnut',
+                                    data: { datasets: [{ data: [20, 20, 20, 20, 20], backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'], borderWidth: 0 }] },
+                                    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', circumference: 180, rotation: 270, plugins: { tooltip: { enabled: false } } }
+                                });
+                                new Chart(document.getElementById('fear-greed-history').getContext('2d'), {
+                                    type: 'line',
+                                    data: {
+                                        labels: historicalData.map(d => new Date(d.timestamp * 1000).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })),
+                                        datasets: [{ label: 'Index Value', data: historicalData.map(d => d.value), borderColor: '#00A8FF', backgroundColor: 'rgba(0, 168, 255, 0.2)', borderWidth: 1.5, pointRadius: 1, tension: 0.2, fill: true }]
+                                    },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }, x: { ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } } } }
+                                });
+                            } catch (error) { contentFear.innerHTML = \`<div class="h-full flex items-center justify-center"><p class="text-red-500 normal-case">\${error.message}</p></div>\`; }
+                        }
+                        initialize();
+                    <\/script>
+                </body>
+                </html>
+            `);
+            fearWindow.document.close();
+        }
+        
+        function openPairChartWindow(pair) {
+            const chartWindow = window.open("", "chartWindow_" + pair, "width=1000,height=700,menubar=no,toolbar=no,location=no,status=no");
+            if (!chartWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            chartWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <title>Grafik Historis: \${pair}</title>
+                    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <script src="https://cdn.tailwindcss.com"><\/script>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
+                    <style>
+                        body { background-color: #020617; color: #e2e8f0; font-family: 'Roboto Mono', monospace; display: flex; flex-direction: column; height: 100vh; margin: 0; padding: 1rem; }
+                        #chart-container { flex-grow: 1; }
+                        .loader-container { display: flex; align-items: center; justify-content: center; height: 100%; }
+                        .feature-loader { border: 4px solid #334155; border-top: 4px solid #00A8FF; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+                        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    </style>
+                </head>
+                <body>
+                    <h1 class="text-2xl font-bold text-center mb-4">\${pair} - GRAFIK HISTORIS</h1>
+                    <div id="chart-container">
+                        <div class="loader-container"><div class="feature-loader"></div></div>
+                        <canvas id="pair-chart"></canvas>
+                    </div>
+                    <script>
+                        const API_KEY = "${API_KEYS.FMP_API_KEY}";
+                        const PAIR = "${pair}";
+                        
+                        async function robustFetch(url) {
+                            const proxyUrl = \`https://api.allorigins.win/raw?url=\${encodeURIComponent(url)}\`;
+                            const response = await fetch(proxyUrl);
+                            if (!response.ok) throw new Error('Gagal memuat data untuk ' + PAIR);
+                            return await response.json();
+                        }
+
+                        async function initializeChart() {
+                            const chartContainer = document.getElementById('chart-container');
+                            try {
+                                const data = await robustFetch(\`https://financialmodelingprep.com/api/v3/historical-price-full/\${PAIR}?serietype=line&apikey=\${API_KEY}\`);
+                                if (!data || !data.historical || data.historical.length === 0) {
+                                    throw new Error("Data tidak ditemukan untuk simbol " + PAIR);
+                                }
+                                
+                                chartContainer.querySelector('.loader-container').style.display = 'none';
+                                
+                                const labels = data.historical.map(item => item.date).reverse();
+                                const prices = data.historical.map(item => item.close).reverse();
+
+                                const ctx = document.getElementById('pair-chart').getContext('2d');
+                                new Chart(ctx, {
+                                    type: 'line',
+                                    data: {
+                                        labels: labels,
+                                        datasets: [{
+                                            label: 'Harga Penutupan',
+                                            data: prices,
+                                            borderColor: '#00A8FF',
+                                            backgroundColor: 'rgba(0, 168, 255, 0.1)',
+                                            borderWidth: 2,
+                                            pointRadius: 0,
+                                            tension: 0.1,
+                                            fill: true
+                                        }]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: { legend: { display: false } },
+                                        scales: {
+                                            y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                                            x: { ticks: { color: '#94a3b8', autoSkip: true, maxTicksLimit: 15 }, grid: { color: '#334155' } }
+                                        }
+                                    }
+                                });
+                            } catch (error) {
+                                chartContainer.innerHTML = \`<p class="text-red-500 text-center">\${error.message}</p>\`;
+                            }
+                        }
+                        initializeChart();
+                    <\/script>
+                </body>
+                </html>
+            `);
+            chartWindow.document.close();
+        }
+
+        function getTradingViewSymbol(userInput) {
+            const symbol = userInput.toUpperCase();
+            const forexPairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
+            const commodities = { 'XAUUSD': 'OANDA:XAUUSD', 'GOLD': 'OANDA:XAUUSD', 'XAGUSD': 'OANDA:XAGUSD', 'SILVER': 'OANDA:XAGUSD', 'WTI': 'TVC:USOIL', 'BRENT': 'TVC:UKOIL' };
+            const cryptos = ['BTCUSD', 'ETHUSD', 'XRPUSD', 'LTCUSD'];
+            
+            if (forexPairs.includes(symbol)) {
+                return `OANDA:${symbol}`;
+            }
+            if (commodities[symbol]) {
+                return commodities[symbol];
+            }
+            if (cryptos.includes(symbol)) {
+                return `COINBASE:${symbol}`;
+            }
+            // Default for stocks, assuming NASDAQ or NYSE
+            return `NASDAQ:${symbol}`;
+        }
+
+        function openAnalysisChartWindow(symbol) {
+            const chartWindow = window.open("", "analysisChartWindow", "width=1200,height=800,menubar=no,toolbar=no,location=no,status=no");
+            if (!chartWindow) {
+                alert("Gagal membuka jendela baru. Mohon izinkan pop-up untuk situs ini.");
+                return;
+            }
+            const tvSymbol = getTradingViewSymbol(symbol);
+            chartWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <title>Analisa Grafik: ${symbol.toUpperCase()}</title>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #131722; }
+                        #tradingview-chart-container { height: 100%; width: 100%; }
+                    </style>
+                    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"><\/script>
+                </head>
+                <body>
+                    <div id="tradingview-chart-container"></div>
+                    <script>
+                        new TradingView.widget({
+                            "autosize": true,
+                            "symbol": "${tvSymbol}",
+                            "interval": "60",
+                            "timezone": "Etc/UTC",
+                            "theme": "dark",
+                            "style": "1",
+                            "locale": "id",
+                            "enable_publishing": false,
+                            "hide_side_toolbar": false,
+                            "allow_symbol_change": true,
+                            "details": true,
+                            "hotlist": true,
+                            "calendar": true,
+                            "container_id": "tradingview-chart-container"
+                        });
+                    <\/script>
+                </body>
+                </html>
+            `);
+            chartWindow.document.close();
+        }
+        
+        function setupTabSwitching() {
+            tabBar.addEventListener('click', (e) => {
+                if (!e.target.classList.contains('tab-button')) return;
+                const clickedTab = e.target;
+                tabBar.querySelectorAll('.tab-button').forEach(t => t.classList.remove('active'));
+                contentArea.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                clickedTab.classList.add('active');
+                const tabId = clickedTab.id;
+                const contentId = tabId.replace('tab-', 'content-');
+                const activeContent = document.getElementById(contentId);
+                if (activeContent) activeContent.classList.add('active');
+                
+                if (tabId === 'tab-fundamental' && !fundamentalAnalysisContent.innerHTML.trim()) generateFundamentalAnalysis();
+                else if (tabId === 'tab-chart' && !areChartsInitialized) setupRealtimeCharts();
+                else if (tabId === 'tab-utilities' && !isCalendarRunning) fetchEconomicCalendar();
+                else if (tabId === 'tab-movers' && !isMoversRunning) fetchMarketMovers();
+                else if (tabId === 'tab-idx-movers' && !isIdxMoversRunning) fetchIndonesianMovers();
+            });
+        }
+        
+        async function setupUserPresence(user, db) {
+            if (!user) return;
+            const { doc, setDoc, updateDoc } = window.firebaseServices;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const userRef = doc(db, `artifacts/${appId}/public/data/users/${user.uid}`);
+            
+            await setDoc(userRef, { username: user.email, isOnline: true }, { merge: true });
+
+            window.addEventListener('beforeunload', async () => {
+                if (user) {
+                    await updateDoc(userRef, { isOnline: false });
+                }
+            });
+        }
+
+        function initTerminal(userEmail, userExpiry) {
+            if (isTerminalInitialized) return; 
+            isTerminalInitialized = true;
+            
+            const { auth, db } = window.firebaseServices;
+            
+            userDisplay.textContent = userEmail;
+            startCountdownTimer(userExpiry);
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            // Setup chat presence
+            setupUserPresence(auth.currentUser, db);
+
+            chatLauncher.addEventListener('click', () => { hologramContainer.classList.toggle('active'); if(hologramContainer.classList.contains('active')) hologramInput.focus(); });
+            closeHologramBtn.addEventListener('click', () => hologramContainer.classList.remove('active'));
+            hologramForm.addEventListener('submit', handleHologramSubmit);
+            
+            uploadImageBtn.addEventListener('click', () => imageUploadInput.click());
+            imageUploadInput.addEventListener('change', handleImageUpload);
+            cancelImageBtn.addEventListener('click', cancelImageUpload);
+            
+            searchForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const query = searchInput.value.trim().toLowerCase();
+                const parts = query.split(' ');
+                const command = parts[0];
+                const argument = parts[1];
+
+                if (command === '/chat') openChatWindow();
+                else if (command === '/ekonomi') openEconomicMapWindow();
+                else if (command === '/yieldcurve') openYieldCurveWindow();
+                else if (command === '/fearindex') openFearAndGreedWindow();
+                else if (command === '/pair' && argument) openPairChartWindow(argument.toUpperCase());
+                else if (command === '/analisa' && argument) openAnalysisChartWindow(argument);
+                else if (command === '/saham') openStockMarketWindow();
+                
+                searchInput.value = '';
+            });
+            
+            setupTabSwitching();
+            setupFooterTicker();
+            
+            document.getElementById('chart-search-form').addEventListener('submit', handleChartSearch);
+            refreshTechnicalBtn.addEventListener('click', generateTechnicalAnalysis);
+            refreshFundamentalBtn.addEventListener('click', generateFundamentalAnalysis);
+            resetDataBtn.addEventListener('click', handleResetData);
+
+            let derivHtmls = { forex: '', commodities: '', crypto: ''};
+            Object.keys(derivConfig).forEach(cat => {
+                derivConfig[cat].forEach(symbol => {
+                    const name = symbol.replace(/frx|cry/, '');
+                    derivHtmls[cat] += `<tr id="${symbol}"><td>${name}</td><td>-</td></tr>`;
+                });
+            });
+            renderTable(forexContainer, derivHtmls.forex);
+            renderTable(commoditiesContainer, derivHtmls.commodities);
+            renderTable(cryptoContainer, derivHtmls.crypto);
+
+            new TradingView.widget({ "autosize": true, "symbol": "IDX:COMPOSITE", "interval": "D", "timezone": "Asia/Jakarta", "theme": "dark", "style": "3", "locale": "id", "toolbar_bg": "#0f172a", "enable_publishing": false, "hide_side_toolbar": true, "hide_top_toolbar": true, "hide_volume": true, "container_id": "ihsg-chart-container" });
+            
+            connectDerivWebSocket();
+            fetchNews();
+            setInterval(fetchNews, 10 * 60 * 1000); 
+        };
+        
+        async function handleLogout() {
+            if (window.firebaseServices) {
+                const { auth, db, doc, updateDoc } = window.firebaseServices;
+                const user = auth.currentUser;
+                if (user) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const userRef = doc(db, `artifacts/${appId}/public/data/users/${user.uid}`);
+                    await updateDoc(userRef, { isOnline: false });
+                }
+                await window.firebaseServices.signOut(auth);
+            }
+            if(countdownInterval) clearInterval(countdownInterval);
+            window.location.reload(); // Reload the page to go back to login screen
+        }
+
+        function showTerminal(userEmail, userExpiry) { 
+            loginScreen.classList.add('hidden'); 
+            terminalScreen.classList.remove('hidden'); 
+            terminalScreen.classList.add('flex'); 
+            initTerminal(userEmail, userExpiry); 
+        }
+        function showLogin() { 
+            terminalScreen.classList.add('hidden'); 
+            terminalScreen.classList.remove('flex'); 
+            loginScreen.classList.remove('hidden'); 
+            loginScreen.classList.add('flex'); 
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // This listener will wait for the module script to load and expose firebaseServices
+            const checkFirebase = setInterval(() => {
+                if (window.firebaseServices) {
+                    clearInterval(checkFirebase);
+                    
+                    const { auth, db, signInWithEmailAndPassword, doc, getDoc, signOut, updateDoc } = window.firebaseServices;
+
+                    loginForm.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        const email = document.getElementById('username').value.trim();
+                        const password = document.getElementById('password').value;
+                        errorMessage.textContent = '';
+
+                        try {
+                            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                            const uid = userCredential.user.uid;
+
+                            const userDocRef = doc(db, "users", uid);
+                            const userDoc = await getDoc(userDocRef);
+                            
+                            if (!userDoc.exists()) {
+                                errorMessage.textContent = "Data pengguna tidak ditemukan.";
+                                await signOut(auth);
+                                return;
+                            }
+
+                            const userData = userDoc.data();
+                            const role = userData.role;
+
+                            const expiryDate = new Date(userData.expiry);
+                            if (new Date() >= expiryDate) {
+                                errorMessage.textContent = 'Akses ditolak. Akun Anda telah kedaluwarsa.';
+                                await signOut(auth);
+                                return;
+                            }
+
+                            if (role === "admin") {
+                                window.location.href = "admin.html";
+                            } else {
+                                // Set global variables for chat window
+                                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                                window.firebaseConfigForChat = firebaseConfig;
+                                window.appIdForChat = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                                window.currentUserId = uid;
+                                window.currentUsername = email;
+                                
+                                showTerminal(email, userData.expiry);
+                            }
+
+                        } catch (error) {
+                            console.error("Login error:", error.code, error.message);
+                            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                                errorMessage.textContent = "Login gagal: Email atau password salah.";
+                            } else {
+                                errorMessage.textContent = "Login gagal: Terjadi kesalahan. " + error.code;
+                            }
+                        }
+                    });
+
+                    logoutBtn.addEventListener('click', handleLogout);
+                    
+                    showLogin();
+                }
+            }, 100); // Check every 100ms
+        });
+    </script>
+</body>
+</html>
+

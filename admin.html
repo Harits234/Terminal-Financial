@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Panel - TPM Terminal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-white p-6 font-mono">
+  <div class="max-w-3xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold text-orange-400">TPM ADMIN PANEL</h1>
+      <button onclick="window.location.href='index.html'" class="text-sm bg-red-600 px-3 py-1 rounded hover:bg-red-500">Kembali ke Login</button>
+    </div>
+
+    <!-- Form Buat Akun -->
+    <form id="create-user-form" class="bg-gray-900 p-6 rounded mb-6">
+      <h2 class="text-lg font-bold mb-4">Buat Akun Baru</h2>
+      <input type="email" id="new-email" placeholder="Email" class="w-full mb-2 p-2 rounded bg-black border border-gray-700" required />
+      <input type="password" id="new-password" placeholder="Password" class="w-full mb-2 p-2 rounded bg-black border border-gray-700" required />
+      <select id="new-role" class="w-full mb-2 p-2 rounded bg-black border border-gray-700">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+      <select id="validity-days" class="w-full mb-4 p-2 rounded bg-black border border-gray-700">
+        <option value="3">3 Hari</option>
+        <option value="7">1 Minggu</option>
+        <option value="30" selected>1 Bulan</option>
+        <option value="90">3 Bulan</option>
+        <option value="36500">Permanen (100 tahun)</option>
+      </select>
+      <button type="submit" class="w-full bg-orange-500 text-black font-bold py-2 rounded hover:bg-orange-400">Buat Akun</button>
+      <p id="create-success-message" class="text-green-400 text-sm mt-2"></p>
+    </form>
+
+    <!-- Daftar User -->
+    <div class="bg-gray-900 p-6 rounded">
+      <h2 class="text-lg font-bold mb-4">Daftar User</h2>
+      <div id="user-list" class="space-y-2 text-sm text-gray-300">
+        Memuat...
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase & Script -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, collection, getDocs, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD95rNaFTGats503Nd5ceXX0hn6o74RfHo",
+      authDomain: "terminal-monitoring-f975e.firebaseapp.com",
+      projectId: "terminal-monitoring-f975e",
+      storageBucket: "terminal-monitoring-f975e.firebasestorage.app",
+      messagingSenderId: "291769493621",
+      appId: "1:291769493621:web:5d795ab426cb0b8ca2f03c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const form = document.getElementById('create-user-form');
+    const userList = document.getElementById('user-list');
+    const msg = document.getElementById('create-success-message');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('new-email').value;
+      const password = document.getElementById('new-password').value;
+      const role = document.getElementById('new-role').value;
+      const days = parseInt(document.getElementById('validity-days').value);
+
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + days);
+
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        const uid = cred.user.uid;
+
+        await setDoc(doc(db, "users", uid), {
+          email,
+          role,
+          expiry: expiryDate.toISOString()
+        });
+
+        msg.textContent = `User '${email}' berhasil dibuat.`;
+        form.reset();
+        loadUsers();
+      } catch (err) {
+        msg.textContent = "Gagal: " + err.message;
+        msg.classList.add("text-red-400");
+      }
+    });
+
+    async function loadUsers() {
+      const usersSnap = await getDocs(collection(db, "users"));
+      userList.innerHTML = "";
+
+      if (usersSnap.empty) {
+        userList.innerHTML = "<p>Belum ada user.</p>";
+        return;
+      }
+
+      usersSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        const exp = new Date(data.expiry);
+        const isExpired = exp < new Date();
+        const expiredLabel = isExpired ? "<span class='text-red-500'>(expired)</span>" : "";
+        userList.innerHTML += `
+          <div class="border border-gray-700 p-2 rounded">
+            <div><strong>${data.email}</strong> <span class="text-xs">[${data.role}]</span></div>
+            <div class="text-xs text-gray-400">Expired: ${exp.toLocaleDateString()} ${expiredLabel}</div>
+          </div>
+        `;
+      });
+    }
+
+    loadUsers();
+  </script>
+</body>
+</html>
